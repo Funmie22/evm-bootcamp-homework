@@ -36,15 +36,20 @@ export class AppService {
   }
 
   async getTokenName(): Promise<string> {
-    const name = await this.publicClient.readContract({
-      address: this.getContractAddress() as `0x${string}`,
-      abi: tokenJson.abi,
-      functionName: 'name',
-    });
-    return name as string;
+    try {
+      const name = await this.publicClient.readContract({
+        address: this.getContractAddress() as `0x${string}`,
+        abi: tokenJson.abi,
+        functionName: 'name',
+      });
+      return name as string;
+    } catch (error) {
+      this.logger.error('Failed to fetch token name', error);
+      throw new Error('Error fetching token name');
+    }
   }
 
-  getServerWalletAddress(): string {
+   getServerWalletAddress(): string {
     return this.walletClient.account.address;
   }
 
@@ -67,9 +72,28 @@ export class AppService {
   }
 
   // TODO
-  mintTokens(address: string) {
-    return { result: true };
+ async mintTokens(address: string): Promise<{ result: boolean }> {
+    if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+      throw new Error('Invalid Ethereum address');
+    }
+    try {
+      const tx = await this.walletClient.writeContract({
+        address: this.getContractAddress() as `0x${string}`,
+        abi: tokenJson.abi,
+        functionName: 'mint',
+        args: [address, BigInt(1000 * 10 ** 18)], // Mint 1000 tokens
+      });
+
+      const receipt = await this.walletClient.waitForTransactionReceipt({
+        hash: tx,
+      });
+      return { result: receipt.status === 'success' };
+    } catch (error) {
+      this.logger.error('Error minting tokens', error);
+      throw new Error('Failed to mint tokens');
+    }
   }
+
   async getTransactionReceipt(hash: string) {
     const receipt = await this.publicClient.getTransactionReceipt({
       hash: hash as `0x${string}`,
@@ -95,24 +119,22 @@ export class AppService {
     return `${formatEther(balanceOf as bigint)} ${symbol}`;
   }
 
-
-  getTotalSupply() {
-    const apiKey = process.env.ALCHEMY_API_KEY;
-    const publicClient = createPublicClient({
-      chain: sepolia,
-      transport: http(`https://eth-sepolia.g.alchemy.com/v2/${apiKey}`),
-    });
-    const symbol = await this.publicClient.readContract({
-      address: this.getContractAddress() as `0x${string}`,
-      abi: tokenJson.abi,
-      functionName: 'symbol',
-    });
-    const totalSupply = await this.publicClient.readContract({
-      address: this.getContractAddress() as `0x${string}`,
-      abi: tokenJson.abi,
-      functionName: 'totalSupply',
-    });
-    return `${formatEther(totalSupply as bigint)} ${symbol}`;
+ async getTotalSupply(): Promise<string> {
+    try {
+      const symbol = await this.publicClient.readContract({
+        address: this.getContractAddress() as `0x${string}`,
+        abi: tokenJson.abi,
+        functionName: 'symbol',
+      });
+      const totalSupply = await this.publicClient.readContract({
+        address: this.getContractAddress() as `0x${string}`,
+        abi: tokenJson.abi,
+        functionName: 'totalSupply',
+      });
+      return `${formatEther(totalSupply as bigint)} ${symbol}`;
+    } catch (error) {
+      this.logger.error('Error fetching total supply', error);
+      throw new Error('Failed to fetch total supply');
+    }
   }
-
 }
